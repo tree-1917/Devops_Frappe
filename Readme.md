@@ -2,221 +2,301 @@
 Source A: https://docs.frappe.io/framework/user/en/tutorial/install-and-setup-bench
 Source B: https://discuss.frappe.io/t/guide-how-to-install-erpnext-v15-on-linux-ubuntu-step-by-step-instructions/111706
 ---
+# 🌟 **Frappe 101 — Complete Beginner Guide (Updated & Extended)**
+
+This guide explains **how to install Frappe/ERPNext**, manage sites, run Frappe with **Supervisor**, configure **multiple ports**, and set up **NGINX reverse proxy** for production.
 
 ---
-## Frappe 101 
 
-### Install Frappe and It's Needs Parts 
+# 📌 1. Install Dependencies
 
-> Installation Command 
-
-```bash 
-# Arch 
-sudo pacman -S yarn wkhtmltopdf python redis nginx git
-
-# Redhat 
-sudo dnf install yarn wkhtmltopdf python redis nginx git
-
-# Ubuntu 
-sudo apt install wkhtmltopdf python redis nginx yarn  git
-```
-
-> Install bench 
+Install required packages depending on your Linux distribution.
 
 ```bash
-# Arch 
+# Arch Linux  
+sudo pacman -S yarn wkhtmltopdf python redis nginx git
+
+# RedHat  
+sudo dnf install yarn wkhtmltopdf python redis nginx git
+
+# Ubuntu   
+sudo apt install wkhtmltopdf python3 redis nginx yarn git
+```
+
+---
+
+# 📌 2. Install Bench
+
+```bash
+# Arch  
 yay -S unixbench
 
-# Redhat 
-
-# Ubuntu (pipx)
+# Ubuntu  
 sudo pipx install frappe-bench
 ```
-### Start a New Project 
 
-> Start New Project 
+---
 
-```shell
-$ bench init frappe-hr
+# 📌 3. Create New Project
+
+### Initialize bench:
+
+```bash
+bench init frappe-hr
 ```
 
-> Source `env`
+### Activate virtualenv:
 
-```bash 
-$ source env/bin/activate
+```bash
+source env/bin/activate
 ```
 
-> Create a New Site 
+### Create new site:
 
 ```bash
 bench new-site mysite.local
-# Will Ask You About Maridb `User` and `Password`
 ```
 
-> Install `ERPNext` App 
+---
+
+# 📌 4. Install ERPNext
 
 ```bash
-# install latest erpnext 
-bench get-app erpnext 
-# specify erpnext branch 
+# Latest
+bench get-app erpnext
+
+# Or specific version
 bench get-app --branch version-15 erpnext
 ```
 
-> Assign This Apps To Your Site 
+Install it into the site:
 
 ```bash
 bench --site mysite.local install-app erpnext
 ```
 
-> Define Default Site in Bench 
+Set default site:
 
 ```bash
 bench use mysite.local
 ```
 
-> Start Bench **Development**
+---
+
+# 📌 5. Run Bench
+
+### Development
 
 ```bash
 bench --site mysite.local serve --port 9000
 ```
 
-> Start Bench  **Produciton**
+### Production (Supervisor)
 
-```bash 
-bench start --port 9000 # this need supervisorctl work it's usee it 
+```bash
+bench start
 ```
 
-### Admin Account 
+---
 
-> Default `Administrator` account 
+# 📌 6. Administrator Setup
 
-```bash 
+Reset admin password:
+
+```bash
 bench --site mysite.local set-admin-password
-# UserName: Administrator
-# Pass: <Need To Set It>
 ```
 
-> Create `Administrator` account From  `console` 
+---
 
-```bash
-# Open Frappe Console 
-bench --site mysite.local console
-```
+# 📌 7. Redis Services
 
-> Create A Admin User
+Frappe uses 3 Redis instances:
 
-```python
-import frappe
+| Purpose  | Port  |
+| -------- | ----- |
+| Cache    | 13000 |
+| Queue    | 11001 |
+| SocketIO | 12001 |
 
-# Create a new user
-user = frappe.get_doc({
-    "doctype": "User",
-    "email": "newadmin@example.com",
-    "first_name": "New",
-    "last_name": "Admin",
-    "enabled": 1,
-    "send_welcome_email": 0
-})
-
-user.insert(ignore_permissions=True)
-frappe.db.commit()
-```
-
-> Set Password For User 
-
-```python 
-from frappe.utils.password import update_password
-
-update_password("newadmin@example.com", "StrongPassword123")
-```
-
-> Update Permission For User 
-
-```python 
-# Load the user again
-u = frappe.get_doc("User", "newadmin@example.com")
-
-# Assign System Manager role
-u.append("roles", {"role": "System Manager"})
-u.save()
-frappe.db.commit()
-```
-> Print `Admin` User 
-
-```python
-u = frappe.get_doc("User", "admdin@xyz.com")
-print(u.as_dict())
-```
-> Print `All` Users
-
-```python 
-# Print Only Names 
-frappe.get_all("User", pluck="name")
-
-# Print Name, Full Names, Email, Enabled Status 
-users = frappe.get_all("User", fields=["name", "full_name", "email_id", "enabled"])
-for u in users:
-    print(u)
-```
-
-> Check Redis Work
-
-```bash
-redis-server --port 13000 &
-redis-server --port 11001 &
-redis-server --port 12001 &
-```
-
-> Check  Redis
+Check Redis status:
 
 ```bash
 redis-cli -p 11001 ping
-redis-cli -p 12001 ping 
+redis-cli -p 12001 ping
 redis-cli -p 13000 ping
 ```
 
-### Make it Works on Local Network With `supervisorctl`
+---
 
-```bash
+# 📌 8. Run **Two Bench Servers** on Different Ports (Same Site)
+
+### Why?
+
+* Useful for development
+* Useful for load balancing
+* Useful for multi-instance setups
+
+---
+
+## 🟧 **Supervisor Config for PORT 9000**
+
+Create:
 
 ```
-### Make More Tow Site Works at different ports 
+/etc/supervisor/conf.d/frappe_9000.conf
+```
 
-### Link Database Tire With Frappe Tire 
+```ini
+[program:frappe_9000]
+command=/usr/bin/bench --site mysite.local serve --port 9000
+directory=/home/moussa/frappe-hr
+autostart=true
+autorestart=true
+stderr_logfile=/var/log/frappe_9000.err.log
+stdout_logfile=/var/log/frappe_9000.out.log
+```
 
-> Default Configuration For Replication 
+---
 
-```json
-// site_config.json //
-{
-  "db_name": "frappe_db",
-  "db_password": "MasterStrongPassword",
-  "db_type": "mariadb",
-  "db_user": "frappe_master",
+## 🟩 **Supervisor Config for PORT 9001**
 
-  "db_host": "10.0.0.10",
+Create:
 
-  "read_replica": {
-    "host": "10.0.0.11",
-    "port": 3306,
-    "user": "frappe_replica",
-    "password": "ReplicaPassword"
-  }
+```
+/etc/supervisor/conf.d/frappe_9001.conf
+```
+
+```ini
+[program:frappe_9001]
+command=/usr/bin/bench --site mysite.local serve --port 9001
+directory=/home/moussa/frappe-hr
+autostart=true
+autorestart=true
+stderr_logfile=/var/log/frappe_9001.err.log
+stdout_logfile=/var/log/frappe_9001.out.log
+```
+
+---
+
+## 🔄 Reload Supervisor
+
+```bash
+sudo supervisorctl reread
+sudo supervisorctl update
+sudo supervisorctl restart frappe_9000
+sudo supervisorctl restart frappe_9001
+```
+
+Now:
+
+| Instance | Port | URL                                            |
+| -------- | ---- | ---------------------------------------------- |
+| Server A | 9000 | [http://localhost:9000](http://localhost:9000) |
+| Server B | 9001 | [http://localhost:9001](http://localhost:9001) |
+
+---
+
+# 📌 9. Production NGINX Configuration (Recommended)
+
+You can route requests to the two Frappe servers:
+
+---
+
+## 🌍 **NGINX Reverse Proxy (with two backend ports)**
+
+Create file:
+
+```
+/etc/nginx/sites-enabled/frappe.conf
+```
+
+### 🔧 Basic Reverse Proxy
+
+```nginx
+server {
+    listen 80;
+    server_name mysite.local;
+
+    location / {
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Use port 9000 as main backend
+        proxy_pass http://127.0.0.1:9000;
+    }
 }
 ```
 
-> Test Replication 
+---
 
-```python
-# Enter in Frappe Site Console And Run # 
-import frappe
-from frappe.database.mariadb.database import MariaDBDatabase
+## 🔁 **NGINX Load Balancing between two Frappe instances**
 
-db = frappe.db
+```nginx
+upstream frappe_backend {
+    server 127.0.0.1:9000;
+    server 127.0.0.1:9001;
+}
 
-print("Master host:", db.host)
+server {
+    listen 80;
+    server_name mysite.local;
 
-# Replica test:
-replica_conn = frappe.db.get_read_replica_connection()
-print("Replica host:", replica_conn.host)
+    location / {
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_pass http://frappe_backend;
+    }
+}
 ```
+
+➡️ This will load balance between :
+
+* **9000**
+* **9001**
+
+---
+
+## 🟦 SocketIO (Real-time Events)
+
+```nginx
+server {
+    listen 9002;
+    server_name mysite.local;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+    }
+}
+```
+
+---
+
+## 🔄 Reload NGINX
+
+```bash
+sudo nginx -t
+sudo systemctl restart nginx
+```
+
+---
+
+# 📌 10. Multiple Sites / Multiple Ports
+
+```bash
+bench new-site site1.local
+bench new-site site2.local
+
+bench --site site1.local serve --port 9100
+bench --site site2.local serve --port 9200
+```
+
+---
+
